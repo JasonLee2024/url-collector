@@ -2,7 +2,7 @@
 name: url-collector
 description: >
   通用网址收藏技能。接收任意 URL → 提取页面元数据 → 按 resource-metadata 规范生成标准化资源记录 → 可选离线存档。
-  支持三种模式：快速收藏 / 深度存档 / 知识库归档（KB-aware：Johnny Decimal 编号 + SITEMAP.md 索引更新）。
+  支持四种模式：快速收藏 / 深度存档 / 完整网页归档 / 知识库归档（KB-aware：Johnny Decimal 编号 + SITEMAP.md 索引更新）。
   Use when the user wants to "收藏这个网址", "记录这个链接", "保存这个网页", "离线存档",
   "归档到 XX 知识库", "把这个链接加入 KB", "bookmark this URL", "collect this link", "save this webpage",
   or provides a general URL and asks to record/archive it.
@@ -12,28 +12,31 @@ allowed-tools: Read, Write, Edit, Bash, WebFetch, AskUserQuestion
 
 # URL Collector — 通用网址收藏
 
-> v1.2.0 · 对标 resource-metadata v2.2 · Dublin Core · schema.org  
+> v1.3.0 · 对标 resource-metadata v2.2 · Dublin Core · schema.org  
 > 互补技能：`medium-article-capture`（Medium 专用）· `opencli-kb-bridge`（B站/知乎/微信/YouTube）
 
 ## 已知限制
 
 - **HTML 解析**：`collect.sh` 使用 `curl | grep -oPi` 提取元数据，对 JS 渲染的 SPA 页面失效。**首选 WebFetch** 获取页面信息，脚本作为降级方案。
-- **内容摘要**：脚本生成的是占位符 `（请根据实际阅读内容填写...）`。**Claude 必须用 WebFetch 读取页面正文**，生成 2-3 句真实摘要填入记录文件。
+- **内容摘要**：快速收藏 / 深度存档模式下，脚本生成的是占位符 `（请根据实际阅读内容填写...）`。**Claude 必须用 WebFetch 读取页面正文**，生成 2-3 句真实摘要填入记录文件。
+- **SPA 页面**：`full_archive.py` 使用 `requests` 获取静态 HTML，无法执行 JavaScript。Vue/React 渲染的页面需页面本身在 HTML 中包含预加载数据（如 Synology KB 的 `preload` JSON），否则正文提取可能不完整。
 
 ## 触发条件
 
 - 「收藏这个网址」「记录这个链接」「保存这个网页」
 - 「离线存档」「完整保存这个页面」
 - 「归档到 XX 知识库」「把这个链接加入 KB」「收录到 KB」
+- 「采集内容到 XX」「保持 html 格式」「图片下载到本地」
 - 「bookmark this URL」「collect this link」「save this webpage」
 - 用户提供任意 URL 并要求记录/归档（无专用采集器的通用网页）
 
-## 三种模式
+## 四种模式
 
 | 模式 | 触发 | 行为 |
 |------|------|------|
 | **快速收藏** | "收藏这个网址" / "记录这个链接" | 提取元数据 → resource-metadata 记录文件 → 当前目录 |
 | **深度存档** | "离线存档" / "完整保存" | 快速收藏 + monolith 离线 HTML 快照 + 可选全文 Markdown |
+| **完整网页归档** | "采集内容到 KB" / "保持 html 格式" | 下载页面+图片→改写路径→生成自包含HTML归档+Markdown资源记录（含全文） |
 | **知识库归档** | "归档到 XX 知识库" / "加入 KB" | KB 结构发现 → JD 编号分配 → KB 兼容格式 → 5C 索引更新 |
 
 ## 安装
@@ -100,7 +103,38 @@ cargo install monolith
 ④ 回写快照路径到资源记录文件
 ```
 
-### 模式三：知识库归档
+### 模式三：完整网页归档（new in v1.3.0）
+
+```
+用户提供 URL + 目标目录
+  ↓
+① 一键运行 full_archive.py
+  - python3 full_archive.py <URL> --output <dir> [--slug-prefix <name>] [--jd-number <XX.XX>]
+  - 或通过 collect.sh: collect.sh <URL> --full-archive [--output <dir>] [--slug-prefix <name>]
+  - 自动完成: 页面下载 → 元数据提取 → 正文提取 → 图片发现→下载→路径改写
+  ↓
+② 输出产物（目标目录下）
+  - {slug}_网页归档.html       # 自包含 HTML（图片路径已改写为本地 images/ 相对路径）
+  - {slug}_网页资源记录.md     # Markdown 资源记录（元数据表 + 内容摘要 + 全文 + 图片引用）
+  - images/                     # 下载的图片（按 {prefix}_{N}.{ext} 命名）
+  ↓
+③ Claude 审核 + 补充
+  - 检查自动生成的内容摘要是否准确，必要时修改
+  - 补充 Markdown 记录中的标签、分类信息
+  ↓
+④ 索引更新（如归档到 KB 目录）
+  - 类别 README.md 追加条目
+  - SITEMAP.md 更新
+```
+
+**支持的页面模式**：
+- 静态 HTML 页面（通用）
+- Vue.js 预加载数据页面（如 Synology KB — 自动从 `preload` JSON 提取正文）
+- 后续可通过 `CONTENT_SELECTORS` 扩展其他模式
+
+**依赖**：`requests`, `beautifulsoup4`（Python 标准库外仅此两项，均已预装）
+
+### 模式四：知识库归档
 
 ```
 用户提供 URL + 目标知识库
@@ -208,5 +242,6 @@ url-collector/
 │   ├── example-webpage.md          # 快速收藏示范
 │   └── example-kb-archive.md       # KB 归档示范
 └── scripts/
-    └── collect.sh                  # 一键采集脚本（支持 --kb 模式）
+    ├── collect.sh                  # 一键采集脚本（支持 --kb / --deep / --full-archive 模式）
+    └── full_archive.py             # 完整网页归档（页面+图片下载+路径改写+HTML/MD双输出）new in v1.3.0
 ```

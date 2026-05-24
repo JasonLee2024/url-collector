@@ -1,11 +1,12 @@
 # URL Collector — 通用网址收藏
 
 > 任意网页的「收藏 → 元数据记录 → 知识库归档」标准化技能。
-> 三种模式：快速收藏 / 深度存档 / KB 归档。
+> 四种模式：快速收藏 / 深度存档 / 完整网页归档 / KB 归档。
 > 基于 resource-metadata v2.2 通用网页资源类型，对标 Dublin Core + schema.org。
 
 ## 最新更新
 
+- **v1.3.0** (2026-05-24)：新增完整网页归档模式（full-archive）。下载页面+图片→改写路径→生成自包含HTML归档+Markdown资源记录（含全文）。新增 `scripts/full_archive.py`（Python，依赖 requests + BeautifulSoup）。支持 Synology KB Vue preload 模式等。
 - **v1.2.0** (2026-05-18)：修复 MODE 逻辑 bug + 模板去重 + quality_gate.py + --dry-run + OG type 检测 + 标签自动提取 + 匹配权重修正 + "不应归档"协议。
 - **v1.1.1** (2026-05-18)：新增 Agent KB 结构分析协议（5 步），SKILL.md 步骤合并优化
 - **v1.1.0** (2026-05-18)：新增知识库归档模式。Johnny Decimal 编号分配 + 5C 索引更新 + KB 兼容 frontmatter。

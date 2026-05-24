@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## v1.3.0 (2026-05-24)
+
+### 新功能：完整网页归档（full-archive）
+
+- 新增 `scripts/full_archive.py`：完整网页归档 Python 脚本
+  - 下载页面 HTML + 自动发现所有 `<img>` 标签 → 下载图片 → 本地 `images/` 目录
+  - 图片路径自动改写为本地相对路径（`images/xxx.png`）
+  - 双输出：自包含 HTML 归档（`_网页归档.html`）+ Markdown 资源记录（`_网页资源记录.md`，含全文）
+  - 支持 `--slug-prefix` / `--jd-number` / `--img-prefix` / `--dry-run` 参数
+  - 内置 HTML→Markdown 转换器（无外部依赖）
+  - 内置 Vue preload JSON 提取器（兼容 Synology KB 等站点）
+  - 多策略正文提取（CSS selector 优先 + body 降级）
+- `collect.sh` 新增 `--full-archive` 模式，自动委托 `full_archive.py`
+  - 新增 `--slug-prefix` / `--jd-number` 参数支持
+- 依赖：`requests` + `beautifulsoup4`（Python 标准库外仅此两项，均已预装）
+
+### 文档更新
+
+- SKILL.md 版本升级至 v1.3.0，模式表由 3 种扩展为 4 种
+- 新增「模式三：完整网页归档」SOP（5 步）
+- 新增 SPA/Vue preload 页面支持说明
+- README.md 版本号及最新更新条目更新
+- `scripts/collect.sh` 注释头更新至 v1.3.0
+
+### 技能目录变更
+
+```
+scripts/full_archive.py  ← 新增（~450 行）
+scripts/collect.sh       ← 修改（+~15 行，新增 --full-archive 委托逻辑）
+SKILL.md                 ← 修改（版本 + 第四种模式 SOP + 已知限制更新）
+README.md                ← 修改（版本 + 模式数量更新）
+CHANGELOG.md             ← 修改（本文件）
+```
+
 ## v1.2.0 (2026-05-18)
 
 ### 缺陷修复
