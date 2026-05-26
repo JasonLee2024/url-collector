@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# url-collector full_archive.py — 完整网页归档脚本 v1.0.0
+# url-collector full_archive.py — 完整网页归档脚本 v1.1.0
 # =============================================================================
 # 功能：接收 URL → 下载页面 → 下载所有图片 → 改写路径 →
 #       生成自包含 HTML 归档 + Markdown 资源记录（含全文）
@@ -13,7 +13,13 @@
 #   {slug}_网页资源记录.md        # Markdown 资源记录（元数据 + 全文 + 图片引用）
 #   images/                        # 下载的图片
 #
-# 依赖：requests, beautifulsoup4（Python 标准库外仅需此二项）
+# 依赖：requests, beautifulsoup4
+# 可选依赖：playwright（JS 渲染页面自动 fallback，未安装则跳过）
+#
+# 变更（v1.1.0）：
+#   - 新增 Playwright JS 渲染 fallback：requests 获取静态 HTML 后自动检测正文量，
+#     若 <200 chars 则自动启动 headless Chromium 渲染再提取
+#   - 新增 --js-render 参数（auto/force/off），控制 JS 渲染策略
 # =============================================================================
 
 import argparse
@@ -29,7 +35,14 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+
+# ── Playwright availability ──────────────────────────────────────────
+try:
+    from playwright.sync_api import sync_playwright
+    HAS_PLAYWRIGHT = True
+except ImportError:
+    HAS_PLAYWRIGHT = False
 
 # ── User-Agent for requests ──────────────────────────────────────────
 HEADERS = {
@@ -54,6 +67,45 @@ def fetch_page(url, timeout=30):
     # Detect encoding
     resp.encoding = resp.apparent_encoding or resp.encoding or "utf-8"
     return resp.text, resp.url
+
+
+def _has_substantial_content(html_text, min_body_chars=200):
+    """Check if the page has enough body text (not just a JS shell)."""
+    soup = BeautifulSoup(html_text, "html.parser")
+    # Remove script/style/noscript
+    for tag in soup.find_all(["script", "style", "noscript", "meta", "link"]):
+        tag.decompose()
+    body = soup.find("body")
+    text = body.get_text() if body else soup.get_text()
+    # Count meaningful chars (non-whitespace)
+    meaningful = len(re.sub(r'\s+', '', text))
+    return meaningful >= min_body_chars
+
+
+def fetch_page_playwright(url, timeout=30):
+    """Render page with headless Chromium for JS-heavy pages.
+    Returns (raw_html, final_url). Falls back gracefully if Playwright unavailable.
+    """
+    if not HAS_PLAYWRIGHT:
+        print("  ⚠ Playwright 未安装，跳过 JS 渲染（pip install playwright && playwright install chromium）")
+        return None, url
+
+    print("  ⏳ 启动 headless Chromium 渲染 JS 页面...")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+            # Wait a bit more for any lazy-loaded content
+            time.sleep(2)
+            html = page.content()
+            final_url = page.url
+            browser.close()
+            print(f"  ✓ Playwright 渲染完成: {len(html)} bytes")
+            return html, final_url
+    except Exception as e:
+        print(f"  ✗ Playwright 渲染失败: {e}")
+        return None, url
 
 
 def extract_metadata(soup, url):
@@ -499,7 +551,7 @@ a {{ color: #0052cc; }}
 {content_html}
 <div class="source-note">
 <p>来源：<a href="{meta.get('url', '')}">{meta.get('title', '')}</a></p>
-<p>采集日期：{datetime.now().strftime('%Y-%m-%d')} | 标签：{tags_str}</p>
+<p>采集日期：{datetime.now().strftime('%Y-%m-%d')} | 标签：{tags_str} | 渲染：{'Playwright (JS)' if meta.get('js_rendered') else 'requests (static)'}</p>
 <p>采集方式：url-collector v{VERSION} full-archive 模式</p>
 </div>
 </body>
@@ -599,6 +651,8 @@ def main():
     parser.add_argument("--img-prefix", default="img", help="图片文件名前缀（默认 img）")
     parser.add_argument("--dry-run", action="store_true", help="仅分析不写入")
     parser.add_argument("--timeout", type=int, default=30, help="HTTP 请求超时秒数（默认 30）")
+    parser.add_argument("--js-render", choices=["auto", "force", "off"], default="auto",
+                        help="JS 渲染策略: auto=自动检测薄页面后 Playwright fallback / force=强制 Playwright / off=仅 requests（默认 auto）")
     parser.add_argument("--version", action="version", version=f"full_archive.py v{VERSION}")
 
     args = parser.parse_args()
@@ -609,13 +663,43 @@ def main():
 
     # ── Step 1: Download page ──
     print("\n>>> Step 1: 下载页面...")
+    js_rendered = False
     try:
         raw_html, final_url = fetch_page(args.url, timeout=args.timeout)
-        print(f"  页面大小: {len(raw_html)} bytes")
+        print(f"  页面大小: {len(raw_html)} bytes (requests)")
         print(f"  最终 URL: {final_url}")
     except requests.RequestException as e:
-        print(f"错误：无法下载页面 — {e}")
-        sys.exit(1)
+        print(f"  requests 下载失败: {e}")
+        if args.js_render != "off":
+            print("  → 尝试 Playwright 渲染...")
+            raw_html, final_url = fetch_page_playwright(args.url, timeout=args.timeout)
+            if raw_html is None:
+                print(f"错误：无法获取页面")
+                sys.exit(1)
+            js_rendered = True
+        else:
+            print(f"错误：无法下载页面（--js-render=off，不尝试 Playwright）")
+            sys.exit(1)
+
+    # Auto-detect JS-rendered pages: if content is thin, fallback to Playwright
+    if not js_rendered and args.js_render != "off":
+        if args.js_render == "force":
+            print("  --js-render=force: 强制 Playwright 渲染")
+            pw_html, pw_url = fetch_page_playwright(args.url, timeout=args.timeout)
+            if pw_html:
+                raw_html, final_url = pw_html, pw_url
+                js_rendered = True
+        elif not _has_substantial_content(raw_html):
+            print("  ⚠ 页面正文 < 200 chars，疑似 JS 动态渲染，自动切换到 Playwright...")
+            pw_html, pw_url = fetch_page_playwright(args.url, timeout=args.timeout)
+            if pw_html:
+                raw_html, final_url = pw_html, pw_url
+                js_rendered = True
+            else:
+                print("  ⚠ Playwright 不可用，使用 requests 获取的静态 HTML 继续")
+
+    if js_rendered:
+        print(f"  渲染后大小: {len(raw_html)} bytes")
 
     soup = BeautifulSoup(raw_html, "html.parser")
 
@@ -623,6 +707,7 @@ def main():
     print("\n>>> Step 2: 提取元数据...")
     meta = extract_metadata(soup, args.url)
     meta["url"] = args.url
+    meta["js_rendered"] = js_rendered
     print(f"  标题: {meta['title'][:80]}")
     print(f"  摘要: {meta['description'][:80] if meta['description'] else '（无）'}")
     print(f"  站点: {meta['site_name'] or '（未知）'}")

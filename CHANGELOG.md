@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## v1.4.0 (2026-05-26)
+
+### 新功能：Playwright JS 渲染 fallback
+
+- `full_archive.py` 升级至 v1.1.0，新增 Playwright headless Chromium 渲染层
+  - `fetch_page_playwright()`：启动 headless Chromium 渲染 JS 页面
+  - `_has_substantial_content()`：自动检测正文是否充足（阈值 200 chars）
+  - 智能 fallback 策略：`requests` 获取 → 正文 < 200 chars → 自动 Playwright
+  - 新增 `--js-render` 参数：`auto`（默认）/ `force`（强制 Playwright）/ `off`（仅 requests）
+  - Playwright 为可选依赖，未安装时自动跳过并继续用静态 HTML
+- 解决了新浪财经、Vue/React SPA 等 JS 动态渲染页面的正文提取问题
+- HTML 归档页脚新增渲染方式标注：`Playwright (JS)` / `requests (static)`
+
+### 文档更新
+
+- SKILL.md 「已知限制」更新，移除 SPA 硬性限制描述
+- SKILL.md 版本号 v1.3.0 → v1.4.0
+
 ## v1.3.0 (2026-05-24)
 
 ### 新功能：完整网页归档（full-archive）

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# url-collector collect.sh — 一键网页收藏脚本 v1.2.0
+# url-collector collect.sh — 一键网页收藏脚本 v1.4.0
 # =============================================================================
 # 功能：接收 URL → 提取页面元数据 → 生成标准化 resource-metadata 记录文件
 # 支持三种模式：快速收藏 / 深度存档 / 知识库归档
@@ -9,7 +9,10 @@
 #   快速收藏    collect.sh <URL> [--output <dir>] [--category <name>] [--dry-run]
 #   深度存档    collect.sh <URL> --deep [--output <dir>] [--dry-run]
 #   KB 归档     collect.sh <URL> --kb <kb-path> [--area <name>] [--category <name>] [--deep] [--dry-run]
-#   完整网页归档 collect.sh <URL> --full-archive [--output <dir>] [--slug-prefix <name>] [--jd-number <XX.XX>] [--dry-run]
+#   完整网页归档 collect.sh <URL> --full-archive [--output <dir>] [--slug-prefix <name>] [--jd-number <XX.XX>] [--js-render auto|force|off] [--dry-run]
+#
+# 变更（v1.4.0）：
+#   - 新增 --js-render 参数：控制 JS 渲染策略（auto/force/off），传递给 full_archive.py
 #
 # 变更（v1.3.0）：
 #   - 新增 --full-archive 模式：委托 full_archive.py 下载页面+图片+改写路径+生成 HTML/MD 双输出
@@ -37,6 +40,7 @@ AREA_NAME=""
 FULL_ARCHIVE=false
 SLUG_PREFIX=""
 JD_NUM=""
+JS_RENDER="auto"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -77,13 +81,17 @@ while [[ $# -gt 0 ]]; do
             JD_NUM="$2"
             shift 2
             ;;
+        --js-render)
+            JS_RENDER="$2"
+            shift 2
+            ;;
         -*)
             echo "未知选项: $1"
             echo "用法:"
             echo "  快速收藏    collect.sh <URL> [--output <dir>] [--category <name>] [--dry-run]"
             echo "  深度存档    collect.sh <URL> --deep [--output <dir>] [--dry-run]"
             echo "  KB 归档     collect.sh <URL> --kb <kb-path> [--area <name>] [--category <name>] [--deep] [--dry-run]"
-            echo "  完整网页归档 collect.sh <URL> --full-archive [--output <dir>] [--slug-prefix <name>] [--jd-number <XX.XX>] [--dry-run]"
+            echo "  完整网页归档 collect.sh <URL> --full-archive [--output <dir>] [--slug-prefix <name>] [--jd-number <XX.XX>] [--js-render auto|force|off] [--dry-run]"
             exit 1
             ;;
         *)
@@ -107,7 +115,7 @@ if $FULL_ARCHIVE; then
         exit 1
     fi
 
-    FA_ARGS=("$URL" --output "$OUTPUT_DIR")
+    FA_ARGS=("$URL" --output "$OUTPUT_DIR" --js-render "$JS_RENDER")
     [[ -n "$SLUG_PREFIX" ]] && FA_ARGS+=(--slug-prefix "$SLUG_PREFIX")
     [[ -n "$JD_NUM" ]] && FA_ARGS+=(--jd-number "$JD_NUM")
     $DRY_RUN && FA_ARGS+=(--dry-run)

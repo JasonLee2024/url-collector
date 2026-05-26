@@ -12,14 +12,14 @@ allowed-tools: Read, Write, Edit, Bash, WebFetch, AskUserQuestion
 
 # URL Collector — 通用网址收藏
 
-> v1.3.0 · 对标 resource-metadata v2.2 · Dublin Core · schema.org  
+> v1.4.0 · 对标 resource-metadata v2.2 · Dublin Core · schema.org  
 > 互补技能：`medium-article-capture`（Medium 专用）· `opencli-kb-bridge`（B站/知乎/微信/YouTube）
 
 ## 已知限制
 
 - **HTML 解析**：`collect.sh` 使用 `curl | grep -oPi` 提取元数据，对 JS 渲染的 SPA 页面失效。**首选 WebFetch** 获取页面信息，脚本作为降级方案。
 - **内容摘要**：快速收藏 / 深度存档模式下，脚本生成的是占位符 `（请根据实际阅读内容填写...）`。**Claude 必须用 WebFetch 读取页面正文**，生成 2-3 句真实摘要填入记录文件。
-- **SPA 页面**：`full_archive.py` 使用 `requests` 获取静态 HTML，无法执行 JavaScript。Vue/React 渲染的页面需页面本身在 HTML 中包含预加载数据（如 Synology KB 的 `preload` JSON），否则正文提取可能不完整。
+- **SPA 页面**：`full_archive.py` 默认使用 `requests` 获取静态 HTML。v1.1.0 起内置智能检测：正文 < 200 chars 时自动启动 Playwright headless Chromium 渲染 JS 页面（需安装 `playwright`，可选依赖）。也可通过 `--js-render force` 强制 Playwright，或 `--js-render off` 跳过。
 
 ## 触发条件
 
@@ -50,11 +50,17 @@ npx skills add JasonLee2024/url-collector
 - `agent-browser`（已安装）— 网页信息提取（标题、OG 标签、全文）
 - `monolith`（需安装 `cargo install monolith`）— 仅深度存档模式需要
 - `resource-metadata`（已安装）— 元数据规范复用
+- `playwright`（推荐安装）— JS 动态渲染页面自动 fallback
 
 ```bash
 # 安装 monolith（仅深度存档模式需要）
 cargo install monolith
+
+# 安装 Playwright（推荐，解决新浪/SPA 等 JS 页面采集问题）
+pip install playwright && playwright install chromium
 ```
+
+> `playwright` 为可选依赖。未安装时 `full_archive.py` 自动跳过 JS 渲染，对静态页面无影响。首次遇到 JS 页面时会提示安装。
 
 ---
 

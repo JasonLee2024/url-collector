@@ -6,6 +6,7 @@
 
 ## 最新更新
 
+- **v1.4.0** (2026-05-26)：`full_archive.py` 新增 Playwright JS 渲染 fallback。自动检测 JS 动态页面（正文 < 200 chars），启动 headless Chromium 渲染后继续采集管线。`--js-render auto/force/off` 参数控制。解决了新浪财经等 SPA 页面的正文提取问题。
 - **v1.3.0** (2026-05-24)：新增完整网页归档模式（full-archive）。下载页面+图片→改写路径→生成自包含HTML归档+Markdown资源记录（含全文）。新增 `scripts/full_archive.py`（Python，依赖 requests + BeautifulSoup）。支持 Synology KB Vue preload 模式等。
 - **v1.2.0** (2026-05-18)：修复 MODE 逻辑 bug + 模板去重 + quality_gate.py + --dry-run + OG type 检测 + 标签自动提取 + 匹配权重修正 + "不应归档"协议。
 - **v1.1.1** (2026-05-18)：新增 Agent KB 结构分析协议（5 步），SKILL.md 步骤合并优化
@@ -28,6 +29,7 @@ cargo install monolith
 
 - 依赖 `agent-browser`（网页信息提取）
 - 深度存档依赖 `monolith`（离线 HTML 快照）
+- 推荐安装 `playwright`（JS 渲染 fallback，解决 SPA 页面采集）
 - 元数据规范基于 `resource-metadata` v2.2
 - KB 归档兼容任何 Johnny Decimal 组织的知识库
 
