@@ -251,3 +251,12 @@ url-collector/
     ├── collect.sh                  # 一键采集脚本（支持 --kb / --deep / --full-archive 模式）
     └── full_archive.py             # 完整网页归档（页面+图片下载+路径改写+HTML/MD双输出）new in v1.3.0
 ```
+
+## 与其他技能的关系
+
+| 技能 | 关系 | 说明 |
+|------|------|------|
+| `resource-metadata` | 下游 | 采集的 URL 按 resource-metadata 规范生成标准化记录 |
+| `annotated-commonplace` | 互补 | url-collector 收藏网页，annotated-commonplace 收藏文字片段——不同内容类型的入库通道 |
+| `markdown-quality-gate` | 下游 | 生成的 Markdown 自动触发格式门禁 |
+| `skill-audit` | 质量验收 | 评分 ≥ 70% 达标 |
