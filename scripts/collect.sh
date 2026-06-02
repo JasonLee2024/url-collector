@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# url-collector collect.sh — 一键网页收藏脚本 v1.4.0
+# url-collector collect.sh — 一键网页收藏脚本 v1.4.1
 # =============================================================================
 # 功能：接收 URL → 提取页面元数据 → 生成标准化 resource-metadata 记录文件
 # 支持三种模式：快速收藏 / 深度存档 / 知识库归档
@@ -10,6 +10,10 @@
 #   深度存档    collect.sh <URL> --deep [--output <dir>] [--dry-run]
 #   KB 归档     collect.sh <URL> --kb <kb-path> [--area <name>] [--category <name>] [--deep] [--dry-run]
 #   完整网页归档 collect.sh <URL> --full-archive [--output <dir>] [--slug-prefix <name>] [--jd-number <XX.XX>] [--js-render auto|force|off] [--dry-run]
+#
+# 变更（v1.4.1）：
+#   - 修复 next_id_in_category() 和 scan_kb() 的 README.md 误匹配 bug
+#     glob 从 *.md 改为 [0-9]*.md 过滤非编号文件；新增 minor 非数字防御检查
 #
 # 变更（v1.4.0）：
 #   - 新增 --js-render 参数：控制 JS 渲染策略（auto/force/off），传递给 full_archive.py
@@ -154,7 +158,8 @@ scan_kb() {
                     local file_count
                     file_count=$(ls "${cat_dir}"*.md 2>/dev/null | wc -l)
                     local max_id
-                    max_id=$(ls "${cat_dir}"*.md 2>/dev/null | sed 's/.*\/\([0-9]*\.[0-9]*\)_.*/\1/' | sort -n | tail -1 || echo "无")
+                    # 只提取匹配 XX.XX_ 编号模式的文件，排除 README.md 等非编号文件
+                    max_id=$(ls "${cat_dir}"[0-9]*.md 2>/dev/null | sed 's/.*\/\([0-9]*\.[0-9]*\)_.*/\1/' | sort -n | tail -1 || echo "无")
                     echo "      ${cat_name} (${file_count} 文件, 最高编号: ${max_id})"
                 done
             fi
@@ -181,13 +186,19 @@ scan_kb() {
 next_id_in_category() {
     local cat_dir="$1"
     local max_id
-    max_id=$(ls "${cat_dir}"*.md 2>/dev/null | sed 's/.*\/\([0-9]*\.[0-9]*\)_.*/\1/' | sort -n | tail -1 || echo "")
+    # 只提取匹配 XX.XX_ 编号模式的文件，排除 README.md 等非编号文件
+    max_id=$(ls "${cat_dir}"[0-9]*.md 2>/dev/null | sed 's/.*\/\([0-9]*\.[0-9]*\)_.*/\1/' | sort -n | tail -1 || echo "")
     if [[ -z "$max_id" ]]; then
         echo ""
         return
     fi
     local major=$(echo "$max_id" | cut -d. -f1)
     local minor=$(echo "$max_id" | cut -d. -f2)
+    # 防御：minor 必须为纯数字
+    if [[ ! "$minor" =~ ^[0-9]+$ ]]; then
+        echo ""
+        return
+    fi
     printf "%s.%02d" "$major" "$((10#$minor + 1))"
 }
 

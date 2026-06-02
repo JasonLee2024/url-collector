@@ -12,7 +12,7 @@ allowed-tools: Read, Write, Edit, Bash, WebFetch, AskUserQuestion
 
 # URL Collector — 通用网址收藏
 
-> v1.4.0 · 对标 resource-metadata v2.2 · Dublin Core · schema.org  
+> v1.4.1 · 对标 resource-metadata v2.2 · Dublin Core · schema.org  
 > 互补技能：`medium-article-capture`（Medium 专用）· `opencli-kb-bridge`（B站/知乎/微信/YouTube）
 
 ## 已知限制

@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v1.4.1 (2026-05-31)
+
+### 缺陷修复
+
+- 修复 `collect.sh` `next_id_in_category()` 函数在 Category 仅有 README.md 时崩溃的 bug
+  - **根因**：`ls "${cat_dir}"*.md` 匹配到 README.md，sed 模式无法提取 ID → cut 取到 `md` → `$((10#md + 1))` 算术错误
+  - **修复**：glob 从 `*.md` 改为 `[0-9]*.md`（只匹配数字开头的编号文件）
+  - **防御**：新增 `minor` 非纯数字检查，返回空字符串让调用方降级处理
+- 同步修复 `scan_kb()` 中相同的 sed 模式：显示正确的最高编号
+
+### 受影响的文件
+
+```
+scripts/collect.sh  ← 修改（next_id_in_category + scan_kb 两处修复）
+```
+
 ## v1.4.0 (2026-05-26)
 
 ### 新功能：Playwright JS 渲染 fallback

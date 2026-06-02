@@ -6,6 +6,7 @@
 
 ## 最新更新
 
+- **v1.4.1** (2026-05-31)：修复 `collect.sh` KB 归档模式的 `next_id_in_category()` bug。Category 仅有 README.md 时，`ls *.md` 误匹配非编号文件导致 `10#md` 算术崩溃。glob 改为 `[0-9]*.md` + 新增 minor 数字防御。
 - **v1.4.0** (2026-05-26)：`full_archive.py` 新增 Playwright JS 渲染 fallback。自动检测 JS 动态页面（正文 < 200 chars），启动 headless Chromium 渲染后继续采集管线。`--js-render auto/force/off` 参数控制。解决了新浪财经等 SPA 页面的正文提取问题。
 - **v1.3.0** (2026-05-24)：新增完整网页归档模式（full-archive）。下载页面+图片→改写路径→生成自包含HTML归档+Markdown资源记录（含全文）。新增 `scripts/full_archive.py`（Python，依赖 requests + BeautifulSoup）。支持 Synology KB Vue preload 模式等。
 - **v1.2.0** (2026-05-18)：修复 MODE 逻辑 bug + 模板去重 + quality_gate.py + --dry-run + OG type 检测 + 标签自动提取 + 匹配权重修正 + "不应归档"协议。
