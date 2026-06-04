@@ -21,6 +21,15 @@ allowed-tools: Read, Write, Edit, Bash, WebFetch, AskUserQuestion
 - **内容摘要**：快速收藏 / 深度存档模式下，脚本生成的是占位符 `（请根据实际阅读内容填写...）`。**Claude 必须用 WebFetch 读取页面正文**，生成 2-3 句真实摘要填入记录文件。
 - **SPA 页面**：`full_archive.py` 默认使用 `requests` 获取静态 HTML。v1.1.0 起内置智能检测：正文 < 200 chars 时自动启动 Playwright headless Chromium 渲染 JS 页面（需安装 `playwright`，可选依赖）。也可通过 `--js-render force` 强制 Playwright，或 `--js-render off` 跳过。
 
+## 技能路由（与同类技能的区分）
+
+| 用户说的 | 应路由到 | 原因 |
+|---------|---------|------|
+| "收藏" / "记录" / "保存网页" / "离线存档" | **url-collector**（← 你在这里） | 通用网页采集，requests-first |
+| "动态页面" / "SPA" / "JS渲染" / "强制渲染" | playwright-capture | Playwright-first SPA 采集 |
+| "高还原度" / "和原网页一样" / "完整 CSS" | monolith | CSS 全页快照 |
+| "登录" / "填写" / "点击按钮" / "自动化" | browser-agent | 交互操作，非采集 |
+
 ## 触发条件
 
 - 「收藏这个网址」「记录这个链接」「保存这个网页」
