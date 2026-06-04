@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# url-collector full_archive.py — 完整网页归档脚本 v1.1.0
+# url-collector full_archive.py — 完整网页归档脚本 v1.2.0
 # =============================================================================
 # 功能：接收 URL → 下载页面 → 下载所有图片 → 改写路径 →
 #       生成自包含 HTML 归档 + Markdown 资源记录（含全文）
@@ -15,6 +15,15 @@
 #
 # 依赖：requests, beautifulsoup4
 # 可选依赖：playwright（JS 渲染页面自动 fallback，未安装则跳过）
+#
+# 变更（v1.2.0）：
+#   - 新增 strip_junk_containers() 后处理：删除 data-nosnippet / sidebar / sharing /
+#     trending / lightbox / login 等 UI 垃圾容器，自动清理空壳元素
+#   - CONTENT_SELECTORS 新增 [itemprop='articleBody'] / #article-body / .article-body，
+#     主流新闻站精确定位正文区域（XDA、The Verge、CNN 等）
+#   - 三处过滤标签列表加入 <aside>（_has_substantial_content / extract_main_content /
+#     body fallback）
+#   - 删除全页图片补充下载逻辑（避免下载侧边栏/推荐阅读缩略图）
 #
 # 变更（v1.1.0）：
 #   - 新增 Playwright JS 渲染 fallback：requests 获取静态 HTML 后自动检测正文量，
@@ -73,7 +82,7 @@ def _has_substantial_content(html_text, min_body_chars=200):
     """Check if the page has enough body text (not just a JS shell)."""
     soup = BeautifulSoup(html_text, "html.parser")
     # Remove script/style/noscript
-    for tag in soup.find_all(["script", "style", "noscript", "meta", "link"]):
+    for tag in soup.find_all(["script", "style", "noscript", "meta", "link", "aside"]):
         tag.decompose()
     body = soup.find("body")
     text = body.get_text() if body else soup.get_text()
@@ -118,6 +127,7 @@ def extract_metadata(soup, url):
         "language": "",
         "tags": [],
         "og_type": "",
+        "author": "",
     }
 
     # Title: og:title > <title>
@@ -159,6 +169,19 @@ def extract_metadata(soup, url):
     if og_type and og_type.get("content"):
         meta["og_type"] = og_type["content"].strip()
 
+    # Author: article:author > meta name="author" > .article-author link text
+    art_author = soup.find("meta", property="article:author")
+    if art_author and art_author.get("content"):
+        meta["author"] = art_author["content"].strip()
+    if not meta["author"]:
+        meta_author = soup.find("meta", attrs={"name": "author"})
+        if meta_author and meta_author.get("content"):
+            meta["author"] = meta_author["content"].strip()
+    if not meta["author"]:
+        author_link = soup.select_one("a.article-author, .w-author-name a, [rel='author']")
+        if author_link:
+            meta["author"] = author_link.get_text(strip=True)
+
     # Tags: meta keywords
     kw_tag = soup.find("meta", attrs={"name": "keywords"})
     if kw_tag and kw_tag.get("content"):
@@ -175,6 +198,10 @@ def extract_metadata(soup, url):
 CONTENT_SELECTORS = [
     # Synology KB: Vue preload data
     ("vue_preload", None),
+    # Semantic article body selectors (HTML5 microdata, mainstream news sites)
+    ("[itemprop='articleBody']", None),
+    ("#article-body", None),
+    (".article-body", None),
     # Common article containers
     ("article", None),
     ("[role='main']", None),
@@ -227,16 +254,81 @@ def extract_main_content(soup, html_text):
                 tag.decompose()
             text = str(el)
             if len(text.strip()) > 100:
+                text = strip_junk_containers(text)
                 return text, selector, None
 
-    # Fallback: use body, strip nav/footer/header/script
+    # Fallback: use body, strip nav/footer/header/script/aside
     body = soup.find("body")
     if body:
-        for tag in body.find_all(["script", "style", "nav", "footer", "header"]):
+        for tag in body.find_all(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
-        return str(body), "body", None
+        return strip_junk_containers(str(body)), "body", None
 
     return html_text, "raw", None
+
+
+# ── Content cleanup ──────────────────────────────────────────────────
+
+def strip_junk_containers(content_html):
+    """Post-extraction cleanup: remove UI chrome, sidebars, trending sections, etc."""
+    soup = BeautifulSoup(content_html, "html.parser")
+
+    # 1. Remove elements whose class/id match known junk patterns (main cleanup)
+    _junk_re = re.compile(
+        r'\b(sidebar|sharing|share[-_]|social[-_]|lightbox|gallery[-_]lightbox|'
+        r'trending[-_]now|trending|login[-_]|sign[-_]?in|sign[-_]?up|newsletter|'
+        r'author[-_]bio|author[-_]box|'
+        r'comment[s]?[-_]|ad[-_]|advertisement|sponsor|promoted|'
+        r'follow[-_]|like[-_]btn|action[-_]bar|quick[-_]action|'
+        r'cookie[-_]|consent[-_]|popup|modal[-_])\b',
+        re.I
+    )
+    for el in soup.find_all(class_=_junk_re):
+        el.decompose()
+    for el in soup.find_all(id=_junk_re):
+        el.decompose()
+
+    # 2. Remove data-nosnippet elements that ALSO match junk patterns
+    #    (XDA uses data-nosnippet on both UI chrome AND editor-added summary blocks,
+    #     so we only remove those with junk class/id — not all data-nosnippet)
+    for el in soup.find_all(attrs={"data-nosnippet": True}):
+        classes = " ".join(el.get("class", []))
+        el_id = el.get("id", "") or ""
+        if _junk_re.search(classes) or _junk_re.search(el_id):
+            el.decompose()
+
+    # 3. Remove empty wrapper elements (divs/sections/spans with no text and no media)
+    for el in soup.find_all(["div", "section", "span"]):
+        if not el.get_text(strip=True) and not el.find(["img", "a", "video", "iframe", "picture"]):
+            el.decompose()
+
+    # 4. Fix responsive-img padding-bottom placeholders (used by XDA for aspect ratio).
+    #    In archived HTML these become large empty gaps since the img is no longer
+    #    absolutely positioned. Remove the padding-bottom to collapse the gap.
+    for el in soup.find_all(class_="responsive-img"):
+        if el.get("style"):
+            el["style"] = re.sub(r'padding-bottom\s*:\s*[\d.]+%?\s*;?', '', el["style"])
+            if not el["style"].strip():
+                del el["style"]
+
+    # 5. Remove stray data-srcset/srcset attributes that are noise in offline archives
+    #    (images used local src= paths, leftover srcset/data-srcset from <picture>/<source>)
+    for el in soup.find_all(["source", "img"]):
+        for attr in ["data-srcset", "data-img-url", "srcset"]:
+            if el.has_attr(attr):
+                del el[attr]
+
+    # 6. Strip stale metadata inside display-cards (comment counts, author bylines
+    #    duplicated from the main article header, etc.)
+    for el in soup.find_all(class_=re.compile(r'\bw-display-card-extra\b|\bw-display-card-details\b')):
+        el.decompose()
+
+    # 7. Mark Related-article display-card blocks with a clean wrapper class
+    #    so CSS can give them visual separation from the main article body.
+    for el in soup.find_all(class_=re.compile(r'\bdisplay-card\b')):
+        el["class"] = ["related-card"]
+
+    return str(soup)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -518,12 +610,36 @@ def make_html_archive(content_html, meta, mapping, output_dir, slug):
     tags_str = " / ".join(meta.get("tags", [])) or "—"
     services_str = "—"  # will be filled by caller if available
 
+    # Build article header from extracted metadata
+    title = meta.get('title', '')
+    author_meta = meta.get('author', '')
+    pub_date = meta.get('publish_date', '')
+    if pub_date:
+        # Reformat ISO date to readable form
+        try:
+            from datetime import datetime as dt
+            d = dt.fromisoformat(pub_date.replace('Z', '+00:00'))
+            pub_date = d.strftime('%B %d, %Y')
+        except (ValueError, TypeError):
+            pass
+
+    header_html = ""
+    if title:
+        header_html += f'<h1>{title}</h1>\n'
+    if author_meta or pub_date:
+        header_html += '<div class="article-meta">\n'
+        if author_meta:
+            header_html += f'  <span class="author">By {author_meta}</span>\n'
+        if pub_date:
+            header_html += f'  <span class="date">Published {pub_date}</span>\n'
+        header_html += '</div>\n'
+
     html_out = f"""<!DOCTYPE html>
 <html lang="{meta.get('language', 'zh-cn') or 'zh-cn'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{meta.get('title', 'Web Page Archive')}</title>
+<title>{title or 'Web Page Archive'}</title>
 <style>
 body {{ font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
        max-width: 860px; margin: 0 auto; padding: 20px 24px;
@@ -532,6 +648,9 @@ h1 {{ font-size: 1.6em; border-bottom: 2px solid #0052cc;
      padding-bottom: 12px; color: #1a1a1a; }}
 h2 {{ font-size: 1.25em; margin-top: 28px; color: #0052cc; }}
 h3 {{ font-size: 1.1em; margin-top: 20px; }}
+.article-meta {{ color: #666; font-size: 0.92em; margin-bottom: 24px; }}
+.article-meta .author {{ margin-right: 16px; }}
+.article-meta .date {{ color: #888; }}
 img {{ border: 1px solid #e0e0e0; border-radius: 4px; margin: 12px 0;
       max-width: 100%; height: auto; }}
 ol, ul {{ padding-left: 24px; }}
@@ -543,11 +662,22 @@ em {{ background: #fff3cd; padding: 1px 4px; border-radius: 2px;
 a {{ color: #0052cc; }}
 .source-note {{ color: #999; font-size: 0.85em; margin-top: 40px;
                border-top: 1px solid #eee; padding-top: 16px; }}
+.related-card {{ display: block; margin: 32px 0; padding: 20px 24px;
+                border: 1px solid #d0d7de; border-radius: 8px;
+                background: #f6f8fa; }}
+.related-card img {{ border: none; margin: 0 0 12px 0; }}
+.related-card .article-card-label {{ text-transform: uppercase;
+                font-size: 0.78em; color: #666; font-weight: 600;
+                margin-bottom: 8px; display: block; }}
+.related-card h5 {{ font-size: 1.05em; margin: 4px 0 8px 0; }}
+.related-card h5 a {{ color: #0052cc; text-decoration: none; }}
+.related-card p {{ font-size: 0.92em; color: #555; margin: 4px 0; }}
 .further_reading {{ border-top: 1px solid #eee; padding-top: 20px;
                    margin-top: 30px; }}
 </style>
 </head>
 <body>
+{header_html}
 {content_html}
 <div class="source-note">
 <p>来源：<a href="{meta.get('url', '')}">{meta.get('title', '')}</a></p>
@@ -747,16 +877,8 @@ def main():
         for orig, resolved in image_list:
             print(f"    {orig} → {resolved}")
     else:
-        # Download images found in the main content
+        # Download images found in the main content (after junk stripping)
         mapping = download_images(image_list, args.output, prefix=args.img_prefix, timeout=args.timeout)
-
-        # Also check the full page for images not in the extracted content
-        page_images = resolve_image_urls(soup, final_url)
-        for orig, resolved in page_images:
-            if orig not in mapping and orig in content_html:
-                # Try downloading this additional image
-                extra_mapping = download_images([(orig, resolved)], args.output, prefix="extra", timeout=args.timeout)
-                mapping.update(extra_mapping)
 
     # ── Step 5: Generate slug ──
     print("\n>>> Step 5: 生成输出...")
